@@ -1111,11 +1111,24 @@ function enviarSolicitacaoCarteirinhaPortal(evento){
       comprovante:comprovantePayload
     };
     google.script.run.withSuccessHandler(r=>{
-      btn.disabled=false;
-      msg.textContent=r?.mensagem||'Solicitação enviada com sucesso.';
-      fotoCarteirinhaNovaPortalV3=null;
-      prepararCarteirinhaPortalV3();
-    carregarArteCarteirinhaPortalV33();
+      const pedidoId=r?.pedidoId||r?.idPedido||r?.pedido||'';
+
+      const concluir=()=>{
+        btn.disabled=false;
+        msg.textContent='Compra realizada com sucesso! A carteirinha será confeccionada quando o lote atingir o mínimo de 10 pedidos.';
+        fotoCarteirinhaNovaPortalV3=null;
+        prepararCarteirinhaPortalV3();
+        carregarArteCarteirinhaPortalV33();
+      };
+
+      if(typeof google!=='undefined'&&google.script&&google.script.run){
+        google.script.run
+          .withSuccessHandler(()=>concluir())
+          .withFailureHandler(()=>concluir())
+          .corrigirRegistroCarteirinhaPortalAluno(tokenAluno,pedidoId);
+      }else{
+        concluir();
+      }
     }).withFailureHandler(e=>{
       btn.disabled=false;msg.textContent=e?.message||'Não foi possível enviar a solicitação.';
     }).solicitarCarteirinhaPortalAluno(tokenAluno,dados);
@@ -1435,7 +1448,7 @@ const LOJA_PORTAL_CONFIG={
    }
   }
  },
- CALCA:{nome:'Calça jogger CAGE',preco:65,tamanhos:['PP','P','M','G','GG']}
+ CALCA:{nome:'Calça jogger CAGE',modelo:'Jogger CAGE preta',preco:65,tamanhos:['PP','P','M','G','GG']}
 };
 let carrinhoLojaPortal=[];
 let quantidadeProdutoLojaPortal=1;
@@ -1463,6 +1476,14 @@ function selecionarPagamentoLojaPortal(opcao){
  opcaoPagamentoLojaPortal=opcao==='TOTAL'?'TOTAL':'METADE';
  atualizarResumoPagamentoLojaPortal();
  mostrarMensagemLojaPortal('lojaMensagem','');
+}
+
+function mostrarConfirmacaoPedidoLojaPortal(texto){
+ const el=document.getElementById('lojaConfirmacaoPedido');
+ if(!el)return;
+ el.textContent=texto||'';
+ el.classList.toggle('oculto',!texto);
+ if(texto)el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 
@@ -1576,6 +1597,7 @@ function moedaLojaPortal(valor){
 
 function abrirAdicionarProdutoLojaPortal(tipo){
  inicializarLojaPortal();
+ mostrarConfirmacaoPedidoLojaPortal('');
  tipo=String(tipo||'').toUpperCase();
  const cfg=LOJA_PORTAL_CONFIG[tipo];
  if(!cfg)return;
@@ -1653,8 +1675,8 @@ function confirmarAdicionarProdutoLojaPortal(){
  else carrinhoLojaPortal.push({
   tipo,
   nome:cfg.nome,
-  modelo,
-  modeloNome:modeloCfg?.nome||'',
+  modelo:tipo==='CALCA'?'JOGGER_CAGE_PRETA':modelo,
+  modeloNome:tipo==='CALCA'?(cfg.modelo||'Jogger CAGE preta'):(modeloCfg?.nome||''),
   tamanho,
   quantidade:quantidadeProdutoLojaPortal,
   preco:cfg.preco
@@ -1751,7 +1773,11 @@ function renderCarrinhoLojaPortal(){
   box.innerHTML='<div class="loja-carrinho-vazio"><strong>Seu carrinho está vazio.</strong><p>Adicione uma camisa, uma calça ou as duas juntas.</p></div>';
  }else{
   box.innerHTML=carrinhoLojaPortal.map((i,indice)=>{
-   const modelo=i.tipo==='CAMISA'?(i.modeloNome||(i.modelo==='SEM_MANGA'?'Sem manga':'Com manga')):'';
+   const modelo=i.tipo==='CAMISA'
+    ? (i.modeloNome||(i.modelo==='SEM_MANGA'?'Sem manga':'Com manga'))
+    : i.tipo==='CALCA'
+      ? (i.modeloNome||'Jogger CAGE preta')
+      : '';
    const detalhe=(modelo?modelo+' · ':'')+'Tamanho '+i.tamanho+' · '+moedaLojaPortal(i.preco)+' cada';
    return '<article class="loja-carrinho-item"><div><h3>'+escAluno(i.nome)+'</h3><p>'+escAluno(detalhe)+'</p></div><strong>'+moedaLojaPortal(Number(i.preco)*Number(i.quantidade))+'</strong><div class="loja-item-acoes"><div><button type="button" onclick="alterarQuantidadeCarrinhoLojaPortal('+indice+',-1)">−</button><b>'+Number(i.quantidade)+'</b><button type="button" onclick="alterarQuantidadeCarrinhoLojaPortal('+indice+',1)">＋</button></div><button class="loja-remover" type="button" onclick="removerItemCarrinhoLojaPortal('+indice+')">Remover</button></div></article>';
   }).join('');
@@ -1825,7 +1851,12 @@ function finalizarPedidoLojaPortal(){
     salvarCarrinhoLocalLojaPortal();
     renderCarrinhoLojaPortal();
     document.getElementById('lojaComprovante').value='';
-    aviso((r.mensagem||'Pedido enviado com sucesso.')+'\nValor informado: '+moedaLojaPortal(r.valorPago)+' · Restante: '+moedaLojaPortal(r.valorFaltante)+(r.turma?'\nTurma: '+r.turma:''),'sucesso');
+    aviso('');
+    mostrarConfirmacaoPedidoLojaPortal(
+      'Compra realizada com sucesso! ' +
+      (r.pedidoId ? 'Pedido '+r.pedidoId+'. ' : '') +
+      'A encomenda será realizada quando o lote deste produto atingir o mínimo de 10 pedidos.'
+    );
    }).withFailureHandler(falhou).salvarCarrinhoPortalAluno(sessao,{...dados,comprovante});
   }catch(e){falhou(e);}
  };
